@@ -1,0 +1,80 @@
+[workspace]
+members = ["cli", "clients/rust", "merkle-tree", "verify"]
+resolver = "2"
+
+[workspace.package]
+version = "0.0.1"
+authors = ["Jito Network <team@jito.network>"]
+repository = "https://github.com/jito-foundation/jito-bam-boost"
+homepage = "https://jito.network"
+license = "Apache-2.0"
+edition = "2021"
+
+[workspace.dependencies]
+anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
+anchor-spl = { version = "0.32.1" }
+anyhow = "1.0.100"
+base64ct = "=1.6.0"
+borsh = "1.6.0"
+bytes = "1.11.0"
+clap = { version = "4.5.16", features = ["derive", "env"] }
+csv = "1.4.0"
+env_logger = "0.10.2"
+fast-math = "0.1.1"
+hex = "0.4.3"
+indexmap = "2.13.0"
+jito-bam-boost-client = { path = "clients/rust", features = ["serde"] }
+jito-bam-boost-merkle-tree = { path = "merkle-tree" }
+jito-bam-boost-merkle-verify = { path = "verify" }
+log = "0.4.22"
+num-derive = "0.4.2"
+num-traits = "0.2.19"
+rand = "0.8.5"
+reqwest = { version = "0.13.1", features = ["json"] }
+serde = "1.0.228"
+serde_json = "1.0.149"
+serde_with = "3.16.1"
+solana-account-info = "3.0.0"
+solana-cli-config = "3.1.5"
+solana-client = "3.0.0"
+solana-commitment-config = "3.0.0"
+solana-cpi = "3.0.0"
+solana-hash = "3.0.0"
+solana-instruction = "3.0.0"
+solana-keypair = "3.0.0"
+solana-metrics = { version = "3.0.0", features = ["agave-unstable-api"] }
+solana-native-token = "3.0.0"
+solana-program = "3.0"
+solana-program-error = "3.0"
+solana-program-pack = "3.0"
+solana-program-test = { version = "3.0", features = ["agave-unstable-api"] }
+solana-pubkey = "3.0.0"
+solana-rent = "3.0.0"
+solana-rpc-client = "3.0.0"
+solana-rpc-client-api = "3.0.0"
+solana-security-txt = "1.1.2"
+solana-signature = "3.0"
+solana-signer = "3.0"
+solana-transaction = "3.0"
+solana-transaction-status = "3.0"
+spl-associated-token-account-interface = { version = "2.0.0" }
+spl-token-interface = { version = "2.0.0" }
+thiserror = "2.0.17"
+tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread"] }
+
+[workspace.lints.rust.unexpected_cfgs]
+level = "warn"
+check-cfg = [
+    'cfg(target_os, values("solana"))',
+    'cfg(feature, values("frozen-abi", "no-entrypoint"))',
+]
+
+[profile.release]
+overflow-checks = true
+lto = "fat"
+codegen-units = 1
+
+[profile.release.build-override]
+opt-level = 3
+incremental = false
+codegen-units = 1

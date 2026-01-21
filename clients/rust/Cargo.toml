@@ -1,0 +1,27 @@
+[package]
+name = "jito-bam-boost-client"
+description = "BAM boost program client"
+version = "1.0.0"
+edition = "2021"
+
+[features]
+serde = []
+anchor = []
+anchor-idl-build = []
+fetch = []
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang.workspace = true
+borsh.workspace = true
+num-derive.workspace = true
+num-traits.workspace = true
+serde.workspace = true
+serde_with.workspace = true
+solana-account-info.workspace = true
+solana-cpi.workspace = true
+solana-instruction.workspace = true
+solana-program.workspace = true
+solana-program-error.workspace = true
+solana-pubkey.workspace = true
+thiserror.workspace = true

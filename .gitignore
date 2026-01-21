@@ -1,0 +1,9 @@
+.DS_Store
+target
+**/*.rs.bk
+
+# test
+merkle_tree.json
+test_keys
+merkle_tree_test_csv.json
+airdrop_entries.json
