@@ -6,7 +6,10 @@ use solana_keypair::Signer;
 use solana_pubkey::Pubkey;
 use solana_rpc_client::rpc_client::RpcClient;
 use solana_transaction::{Instruction, Signers, Transaction};
-use spl_associated_token_account_interface::address::get_associated_token_address_with_program_id;
+use spl_associated_token_account_interface::{
+    address::get_associated_token_address_with_program_id,
+    instruction::create_associated_token_account_idempotent,
+};
 
 use crate::{
     bam_boost::{BamBoostCommands, ClaimStatusActions, MerkleDistributorActions, NetworkArg},
@@ -162,7 +165,19 @@ impl BamBoostCliHandler {
 
         log::info!("Claiming parameters: {ix_builder:?}");
 
-        self.process_transaction(&[ix], &signer.pubkey(), &[signer])?;
+        self.process_transaction(
+            &[
+                create_associated_token_account_idempotent(
+                    &signer.pubkey(),
+                    &signer.pubkey(),
+                    &JITOSOL_MINT,
+                    &spl_token_interface::id(),
+                ),
+                ix,
+            ],
+            &signer.pubkey(),
+            &[signer],
+        )?;
 
         if !self.print_tx {
             let claim_status_acc = self
