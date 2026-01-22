@@ -14,7 +14,7 @@ cargo r -p jito-bam-boost-cli -- \
     --network mainnet \
     --epoch <EPOCH> \
     --rpc-url <RPC_URL> \
-    --signer <PATH_TO_KEYPAIR> \
+    --signer <PATH_TO_IDENTITY_KEYPAIR> \
     --commitment confirmed \
     --jito-bam-boost-program-id BoostxbPp2ENYHGcTLYt1obpcY13HE4NojdqNWdzqSSb
 ```
