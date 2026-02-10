@@ -153,7 +153,7 @@ impl BamBoostCliHandler {
 
         let claim_status_pda = Pubkey::new_from_array(claim_status_pda.to_bytes());
 
-        if let Ok(_) = rpc_client.get_account(&claim_status_pda) {
+        if rpc_client.get_account(&claim_status_pda).is_ok() {
             return Err(anyhow!("Claim status account already exists — subsidy for this epoch has already been claimed."));
         }
 
