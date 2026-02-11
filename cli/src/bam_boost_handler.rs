@@ -95,6 +95,7 @@ impl BamBoostCliHandler {
     }
 
     async fn claim(&self, cluster: &str, epoch: u64) -> anyhow::Result<()> {
+        let rpc_client = self.get_rpc_client();
         let signer = self
             .cli_config
             .signer
@@ -150,10 +151,16 @@ impl BamBoostCliHandler {
 
         let node = merkle_tree.get_node(&signer.pubkey());
 
+        let claim_status_pda = Pubkey::new_from_array(claim_status_pda.to_bytes());
+
+        if rpc_client.get_account(&claim_status_pda).is_ok() {
+            return Err(anyhow!("Claim status account already exists — subsidy for this epoch has already been claimed."));
+        }
+
         let mut ix_builder = ClaimBuilder::new();
         ix_builder
             .distributor(Pubkey::new_from_array(distributor_pda.to_bytes()))
-            .claim_status(Pubkey::new_from_array(claim_status_pda.to_bytes()))
+            .claim_status(claim_status_pda)
             .from(distributor_token_address)
             .to(claimant_token_address)
             .claimant(signer.pubkey())

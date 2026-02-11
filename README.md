@@ -1,5 +1,13 @@
 # Jito BAM Boost CLI
 
+## Check Version
+
+Verify the installed CLI version:
+
+```bash
+cargo r -p jito-bam-boost-cli -- --version
+```
+
 ## How to Claim Subsidy
 
 Validators can claim their allocated JitoSOL rewards by providing a merkle proof. Use the CLI to claim rewards for a specific epoch:
