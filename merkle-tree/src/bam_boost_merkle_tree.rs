@@ -46,7 +46,7 @@ impl BamBoostMerkleTree {
             tree_nodes_map
                 .entry(claimant)
                 .and_modify(|n| {
-                    println!("duplicate claimant {} found, combining", n.claimant);
+                    eprintln!("duplicate claimant {} found, combining", n.claimant);
                     n.amount = n.amount.checked_add(tree_node.amount).unwrap();
                 })
                 .or_insert_with(|| tree_node); // If not exists, insert a new entry
@@ -77,7 +77,7 @@ impl BamBoostMerkleTree {
             tree_nodes,
         };
 
-        println!(
+        eprintln!(
             "created merkle tree with {} nodes and max total claim of {}",
             tree.max_num_nodes, tree.max_total_claim
         );

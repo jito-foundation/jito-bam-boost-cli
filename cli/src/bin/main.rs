@@ -22,6 +22,15 @@ pub fn get_cli_config(args: &Cli) -> Result<CliConfig, anyhow::Error> {
         _ => None,
     };
 
+    let address = match &args.address {
+        Some(addr_str) => {
+            let pubkey = Pubkey::from_str(addr_str)
+                .map_err(|e| anyhow::anyhow!("Failed to parse --address pubkey: {}", e))?;
+            Some(pubkey)
+        }
+        None => None,
+    };
+
     let cli_config = CliConfig {
         rpc_url: args
             .rpc_url
@@ -33,6 +42,7 @@ pub fn get_cli_config(args: &Cli) -> Result<CliConfig, anyhow::Error> {
                 .ok_or_else(|| anyhow::anyhow!("commitment is required"))?,
         )?,
         signer,
+        address,
     };
 
     Ok(cli_config)
@@ -61,6 +71,8 @@ async fn main() -> Result<(), anyhow::Error> {
                 args.print_tx,
                 args.print_json,
                 args.print_json_with_reserves,
+                args.assert_deploy_slot,
+                args.output,
             )
             .handle(action)
             .await?;

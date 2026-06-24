@@ -9,7 +9,7 @@ pub enum NetworkArg {
 }
 
 /// The CLI handler for the bam_boost program
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum BamBoostCommands {
     /// MerkleDistributor operations
     MerkleDistributor {
@@ -25,22 +25,29 @@ pub enum BamBoostCommands {
 }
 
 /// The actions that can be performed on the bam_boost MerkleDistributor
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum MerkleDistributorActions {
     /// Claim
     Claim {
         /// Network type (mainnet or testnet)
-        #[arg(long, value_enum)]
+        #[arg(long, value_enum, default_value = "mainnet")]
         network: NetworkArg,
 
-        /// Epoch number
+        /// Epoch number. If omitted, scans every epoch from --first-epoch
+        /// through the current epoch and claims each eligible one.
         #[arg(long)]
-        epoch: u64,
+        epoch: Option<u64>,
+
+        /// First epoch to scan when --epoch is omitted (scan-all mode).
+        /// If also omitted, the CLI walks back from the current epoch and
+        /// auto-discovers the earliest epoch with a published merkle tree.
+        #[arg(long)]
+        first_epoch: Option<u64>,
     },
 }
 
 /// The actions that can be performed on the bam_boost ClaimStatus
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum ClaimStatusActions {
     /// Get ClaimStatus
     Get {

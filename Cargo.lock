@@ -2031,7 +2031,9 @@ name = "jito-bam-boost-cli"
 version = "1.0.1"
 dependencies = [
  "anyhow",
+ "bincode",
  "borsh 1.6.0",
+ "bs58",
  "bytes",
  "clap 4.5.54",
  "env_logger",
@@ -2042,6 +2044,7 @@ dependencies = [
  "serde_json",
  "solana-cli-config",
  "solana-commitment-config",
+ "solana-hash 3.1.0",
  "solana-keypair",
  "solana-program-pack 3.0.0",
  "solana-pubkey 3.0.0",
