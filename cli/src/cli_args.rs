@@ -68,4 +68,11 @@ pub enum ProgramCommand {
         #[command(subcommand)]
         action: BamBoostCommands,
     },
+
+    /// Launch the full-screen interactive interface
+    Tui {
+        /// Network type (mainnet or testnet)
+        #[arg(long)]
+        network: Option<String>,
+    },
 }

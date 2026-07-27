@@ -1,21 +1,36 @@
 use anyhow::anyhow;
 use borsh::BorshDeserialize;
-use jito_bam_boost_client::{accounts::ClaimStatus, instructions::ClaimBuilder};
+use jito_bam_boost_client::accounts::ClaimStatus;
 use jito_bam_boost_merkle_tree::bam_boost_merkle_tree::BamBoostMerkleTree;
 use solana_keypair::Signer;
 use solana_pubkey::Pubkey;
 use solana_rpc_client::rpc_client::RpcClient;
 use solana_transaction::{Instruction, Signers, Transaction};
-use spl_associated_token_account_interface::{
-    address::get_associated_token_address_with_program_id,
-    instruction::create_associated_token_account_idempotent,
-};
 
 use crate::{
     bam_boost::{BamBoostCommands, ClaimStatusActions, MerkleDistributorActions, NetworkArg},
     cli_config::CliConfig,
-    JITOSOL_MINT,
+    pda, JITOSOL_MINT,
 };
+
+// `format_jitosol` lives in `scanner.rs` (single implementation); re-exported here so
+// existing `bam_boost_handler::format_jitosol` imports keep compiling.
+pub use crate::scanner::format_jitosol;
+
+/// Formats a message about skipped expired epochs.
+fn format_expired_message(count: usize, total_amount: u64) -> String {
+    format!(
+        "Skipping {} expired epoch(s) ({} JitoSOL no longer claimable)",
+        count,
+        format_jitosol(total_amount)
+    )
+}
+
+pub fn default_cache_dir() -> std::path::PathBuf {
+    dirs::cache_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("jito-bam-boost")
+}
 
 #[allow(dead_code)]
 pub struct BamBoostCliHandler {
@@ -64,34 +79,28 @@ impl BamBoostCliHandler {
 
                 self.claim(network, epoch).await
             }
+            BamBoostCommands::MerkleDistributor {
+                action: MerkleDistributorActions::Status { network, claimant },
+            } => {
+                let network = match network {
+                    NetworkArg::Mainnet => "mainnet",
+                    NetworkArg::Testnet => "testnet",
+                };
+                self.status(network, claimant).await
+            }
+            BamBoostCommands::MerkleDistributor {
+                action: MerkleDistributorActions::ClaimAll { network, yes },
+            } => {
+                let network = match network {
+                    NetworkArg::Mainnet => "mainnet",
+                    NetworkArg::Testnet => "testnet",
+                };
+                self.claim_all(network, yes).await
+            }
             BamBoostCommands::ClaimStatus {
                 action: ClaimStatusActions::Get { epoch, claimant },
             } => self.get_claim_status(epoch, claimant),
         }
-    }
-
-    fn merkle_distributor_address(&self, jitosol_mint: Pubkey, epoch: u64) -> Pubkey {
-        Pubkey::find_program_address(
-            &[
-                b"merkle_distributor",
-                jitosol_mint.to_bytes().as_slice(),
-                epoch.to_le_bytes().as_slice(),
-            ],
-            &self.bam_boost_program_id,
-        )
-        .0
-    }
-
-    fn claim_status_address(&self, claimant: Pubkey, distributor_pda: Pubkey) -> Pubkey {
-        Pubkey::find_program_address(
-            &[
-                b"claim_status",
-                claimant.to_bytes().as_slice(),
-                distributor_pda.to_bytes().as_slice(),
-            ],
-            &self.bam_boost_program_id,
-        )
-        .0
     }
 
     async fn claim(&self, cluster: &str, epoch: u64) -> anyhow::Result<()> {
@@ -102,18 +111,12 @@ impl BamBoostCliHandler {
             .clone()
             .ok_or_else(|| anyhow::anyhow!("signer is required"))?;
 
-        let distributor_pda = self.merkle_distributor_address(JITOSOL_MINT, epoch);
-        let distributor_token_address = get_associated_token_address_with_program_id(
-            &Pubkey::new_from_array(distributor_pda.to_bytes()),
-            &JITOSOL_MINT,
-            &spl_token_interface::id(),
-        );
-
-        let claim_status_pda = self.claim_status_address(signer.pubkey(), distributor_pda);
-        let claimant_token_address = get_associated_token_address_with_program_id(
+        let distributor_pda =
+            pda::merkle_distributor_address(&self.bam_boost_program_id, &JITOSOL_MINT, epoch);
+        let claim_status_pda = pda::claim_status_address(
+            &self.bam_boost_program_id,
             &signer.pubkey(),
-            &JITOSOL_MINT,
-            &spl_token_interface::id(),
+            &distributor_pda,
         );
 
         let url = format!(
@@ -149,56 +152,70 @@ impl BamBoostCliHandler {
                 }
             };
 
-        let node = merkle_tree.get_node(&signer.pubkey());
-
-        let claim_status_pda = Pubkey::new_from_array(claim_status_pda.to_bytes());
-
         if rpc_client.get_account(&claim_status_pda).is_ok() {
             return Err(anyhow!("Claim status account already exists — subsidy for this epoch has already been claimed."));
         }
 
-        let mut ix_builder = ClaimBuilder::new();
-        ix_builder
-            .distributor(Pubkey::new_from_array(distributor_pda.to_bytes()))
-            .claim_status(claim_status_pda)
-            .from(distributor_token_address)
-            .to(claimant_token_address)
-            .claimant(signer.pubkey())
-            .token_program(spl_token_interface::id())
-            .amount(node.amount)
-            .proof(node.proof.unwrap());
-        let mut ix = ix_builder.instruction();
-        ix.program_id = self.bam_boost_program_id;
-
-        log::info!("Claiming parameters: {ix_builder:?}");
-
-        self.process_transaction(
-            &[
-                create_associated_token_account_idempotent(
-                    &signer.pubkey(),
-                    &signer.pubkey(),
-                    &JITOSOL_MINT,
-                    &spl_token_interface::id(),
-                ),
-                ix,
-            ],
+        let node = merkle_tree.get_node(&signer.pubkey());
+        let proof = node
+            .proof
+            .clone()
+            .ok_or_else(|| anyhow!("merkle proof missing for claimant"))?;
+        let ixs = crate::batch_claim::build_claim_ixs(
+            &self.bam_boost_program_id,
             &signer.pubkey(),
-            &[signer],
-        )?;
+            epoch,
+            node.amount,
+            proof,
+        );
+
+        log::info!("Claiming epoch {epoch} for {}", signer.pubkey());
+
+        self.process_transaction(&ixs, &signer.pubkey(), &[signer])?;
 
         if !self.print_tx {
-            let claim_status_acc = self
-                .get_account::<ClaimStatus>(&Pubkey::new_from_array(claim_status_pda.to_bytes()))?;
+            let claim_status_acc = self.get_account::<ClaimStatus>(&claim_status_pda)?;
             log::info!("ClaimStatus: {claim_status_acc:?}");
         }
 
         Ok(())
     }
 
-    fn get_claim_status(&self, epoch: u64, claimant: Pubkey) -> anyhow::Result<()> {
-        let distributor_pda = self.merkle_distributor_address(JITOSOL_MINT, epoch);
+    async fn status(&self, network: &str, claimant: Pubkey) -> anyhow::Result<()> {
+        let scanner = crate::scanner::Scanner::new(default_cache_dir());
+        let rpc_client = self.get_rpc_client();
+        let statuses = scanner
+            .scan(network, &claimant, &rpc_client, &self.bam_boost_program_id)
+            .await?;
 
-        let claim_status_pda = self.claim_status_address(claimant, distributor_pda);
+        if self.print_json {
+            println!("{}", serde_json::to_string_pretty(&statuses)?);
+            return Ok(());
+        }
+
+        println!("{:>8}  {:>18}  Status", "Epoch", "Amount (JitoSOL)");
+        for s in &statuses {
+            let (amount, state) = match (s.amount, s.claimed, s.expired) {
+                (Some(a), true, _) => (format_jitosol(a), "claimed"),
+                (Some(a), false, true) => (format_jitosol(a), "expired"),
+                (Some(a), false, false) => (format_jitosol(a), "unclaimed"),
+                (None, _, _) => ("-".to_string(), "not eligible"),
+            };
+            println!("{:>8}  {:>18}  {}", s.epoch, amount, state);
+        }
+        println!(
+            "\n{}",
+            crate::scanner::Stats::from(statuses.as_slice()).format()
+        );
+        Ok(())
+    }
+
+    fn get_claim_status(&self, epoch: u64, claimant: Pubkey) -> anyhow::Result<()> {
+        let distributor_pda =
+            pda::merkle_distributor_address(&self.bam_boost_program_id, &JITOSOL_MINT, epoch);
+
+        let claim_status_pda =
+            pda::claim_status_address(&self.bam_boost_program_id, &claimant, &distributor_pda);
 
         println!("ClaimStatus PDA: {claim_status_pda}");
 
@@ -207,6 +224,108 @@ impl BamBoostCliHandler {
 
         println!("{}", serde_json::to_string_pretty(&account)?);
 
+        Ok(())
+    }
+
+    async fn claim_all(&self, network: &str, yes: bool) -> anyhow::Result<()> {
+        if self.print_tx {
+            anyhow::bail!(
+                "--print-tx is not supported by claim-all; use `status` to preview unclaimed epochs"
+            );
+        }
+
+        let signer = self
+            .cli_config
+            .signer
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("signer is required"))?;
+        let claimant = signer.pubkey();
+
+        let scanner = crate::scanner::Scanner::new(default_cache_dir());
+        let rpc_client = self.get_rpc_client();
+        let statuses = scanner
+            .scan(network, &claimant, &rpc_client, &self.bam_boost_program_id)
+            .await?;
+
+        // Print stats after scan
+        println!("{}", crate::scanner::Stats::from(&statuses[..]).format());
+
+        // Print message about skipped expired epochs if any exist
+        let expired: Vec<_> = statuses.iter().filter(|s| s.expired).collect();
+        if !expired.is_empty() {
+            let expired_amount: u64 = expired.iter().filter_map(|s| s.amount).sum();
+            println!("{}", format_expired_message(expired.len(), expired_amount));
+        }
+
+        let unclaimed: Vec<_> = statuses.iter().filter(|s| s.is_claimable()).collect();
+        if unclaimed.is_empty() {
+            println!("Nothing to claim: no unclaimed epochs for {claimant}");
+            return Ok(());
+        }
+
+        let total: u64 = unclaimed.iter().filter_map(|s| s.amount).sum();
+        println!("Unclaimed epochs for {claimant}:");
+        for s in &unclaimed {
+            println!(
+                "  epoch {:>6}: {} JitoSOL",
+                s.epoch,
+                format_jitosol(s.amount.unwrap_or(0))
+            );
+        }
+        println!(
+            "Total: {} JitoSOL across {} epoch(s)",
+            format_jitosol(total),
+            unclaimed.len()
+        );
+
+        if !yes {
+            print!("Proceed with claiming? [y/N] ");
+            use std::io::Write as _;
+            std::io::stdout().flush()?;
+            let mut answer = String::new();
+            std::io::stdin().read_line(&mut answer)?;
+            if !matches!(answer.trim(), "y" | "Y" | "yes") {
+                println!("Aborted.");
+                return Ok(());
+            }
+        }
+
+        let epochs: Vec<u64> = unclaimed.iter().map(|s| s.epoch).collect();
+        let results = crate::batch_claim::claim_epochs(
+            &scanner,
+            &self.cli_config,
+            &self.bam_boost_program_id,
+            network,
+            &epochs,
+            &mut |event| match &event.state {
+                crate::batch_claim::ClaimState::Started => {
+                    println!("epoch {}: claiming...", event.epoch)
+                }
+                crate::batch_claim::ClaimState::Success(sig) => {
+                    println!("epoch {}: OK  {sig}", event.epoch)
+                }
+                crate::batch_claim::ClaimState::Failed(e) => {
+                    println!("epoch {}: FAILED  {e}", event.epoch)
+                }
+                crate::batch_claim::ClaimState::Skipped(r) => {
+                    println!("epoch {}: skipped  {r}", event.epoch)
+                }
+            },
+        )
+        .await?;
+
+        let ok = results
+            .iter()
+            .filter(|r| matches!(r.state, crate::batch_claim::ClaimState::Success(_)))
+            .count();
+        let failed = results
+            .iter()
+            .filter(|r| matches!(r.state, crate::batch_claim::ClaimState::Failed(_)))
+            .count();
+        println!(
+            "\nDone: {ok} claimed, {failed} failed, {} other",
+            results.len() - ok - failed
+        );
         Ok(())
     }
 
@@ -255,5 +374,47 @@ impl BamBoostCliHandler {
         log::info!("Transaction confirmed: {:?}", result);
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formats_jitosol_amounts() {
+        assert_eq!(format_jitosol(0), "0.000000000");
+        assert_eq!(format_jitosol(1_234), "0.000001234");
+        assert_eq!(format_jitosol(1_500_000_000), "1.500000000");
+    }
+
+    #[test]
+    fn formats_expired_message() {
+        assert_eq!(
+            format_expired_message(1, 500_000_000),
+            "Skipping 1 expired epoch(s) (0.500000000 JitoSOL no longer claimable)"
+        );
+        assert_eq!(
+            format_expired_message(3, 3_500_000_000),
+            "Skipping 3 expired epoch(s) (3.500000000 JitoSOL no longer claimable)"
+        );
+    }
+
+    #[tokio::test]
+    async fn claim_all_rejects_print_tx() {
+        let cli_config = CliConfig {
+            rpc_url: "http://localhost:1".to_string(),
+            commitment: solana_commitment_config::CommitmentConfig::confirmed(),
+            signer: None,
+        };
+        let handler = BamBoostCliHandler::new(cli_config, Pubkey::new_unique(), true, false, false);
+
+        let err = handler
+            .claim_all("mainnet", true)
+            .await
+            .expect_err("claim-all must reject --print-tx");
+        assert!(err
+            .to_string()
+            .contains("--print-tx is not supported by claim-all"));
     }
 }

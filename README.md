@@ -26,3 +26,22 @@ cargo r -p jito-bam-boost-cli -- \
     --commitment confirmed \
     --jito-bam-boost-program-id BoostxbPp2ENYHGcTLYt1obpcY13HE4NojdqNWdzqSSb
 ```
+
+## Status Dashboard, Batch Claim & TUI
+
+Check all epochs at once, claim everything unclaimed, or use the interactive
+full-screen interface. See [docs/claiming.md](./docs/claiming.md).
+
+```bash
+# Read-only dashboard (no keypair needed)
+cargo r -p jito-bam-boost-cli -- --rpc-url <RPC_URL> --commitment confirmed \
+    bam-boost merkle-distributor status --network mainnet --claimant <IDENTITY_PUBKEY>
+
+# Claim every unclaimed epoch
+cargo r -p jito-bam-boost-cli -- --rpc-url <RPC_URL> --commitment confirmed \
+    --signer <PATH_TO_IDENTITY_KEYPAIR> \
+    bam-boost merkle-distributor claim-all --network mainnet
+
+# Interactive TUI
+cargo r -p jito-bam-boost-cli -- tui
+```

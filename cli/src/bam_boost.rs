@@ -37,6 +37,28 @@ pub enum MerkleDistributorActions {
         #[arg(long)]
         epoch: u64,
     },
+
+    /// Show subsidy status for every published epoch
+    Status {
+        /// Network type (mainnet or testnet)
+        #[arg(long, value_enum)]
+        network: NetworkArg,
+
+        /// Claimant pubkey (validator identity); no keypair needed
+        #[arg(long)]
+        claimant: Pubkey,
+    },
+
+    /// Claim every unclaimed epoch for the signer
+    ClaimAll {
+        /// Network type (mainnet or testnet)
+        #[arg(long, value_enum)]
+        network: NetworkArg,
+
+        /// Skip the interactive confirmation
+        #[arg(long, default_value = "false")]
+        yes: bool,
+    },
 }
 
 /// The actions that can be performed on the bam_boost ClaimStatus

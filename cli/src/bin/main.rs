@@ -40,11 +40,7 @@ pub fn get_cli_config(args: &Cli) -> Result<CliConfig, anyhow::Error> {
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
-
     let args: Cli = Cli::parse();
-
-    let cli_config = get_cli_config(&args)?;
 
     let bam_boost_program_id =
         if let Some(jito_bam_boost_program_id) = &args.jito_bam_boost_program_id {
@@ -52,6 +48,33 @@ async fn main() -> Result<(), anyhow::Error> {
         } else {
             JITO_BAM_BOOST_PROGRAM_ID
         };
+
+    // The TUI owns the alternate screen; env_logger writing to stderr would
+    // corrupt it, and the TUI has relaxed config requirements (no
+    // --commitment needed), so it is handled before logger init and
+    // get_cli_config.
+    if let Some(ProgramCommand::Tui { network }) = &args.command {
+        let commitment = match &args.commitment {
+            Some(c) => CommitmentConfig::from_str(c)?,
+            None => CommitmentConfig::confirmed(),
+        };
+        let rpc_url = args
+            .rpc_url
+            .clone()
+            .unwrap_or_else(|| "https://api.mainnet-beta.solana.com".to_string());
+        return jito_bam_boost_cli::tui::run(
+            network.clone(),
+            rpc_url,
+            commitment,
+            args.signer.clone(),
+            bam_boost_program_id,
+        )
+        .await;
+    }
+
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+
+    let cli_config = get_cli_config(&args)?;
 
     match args.command.expect("Command not found") {
         ProgramCommand::BamBoost { action } => {
@@ -65,6 +88,7 @@ async fn main() -> Result<(), anyhow::Error> {
             .handle(action)
             .await?;
         }
+        ProgramCommand::Tui { .. } => unreachable!("handled above"),
     }
 
     Ok(())
