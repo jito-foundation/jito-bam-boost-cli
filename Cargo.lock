@@ -2031,7 +2031,9 @@ name = "jito-bam-boost-cli"
 version = "1.0.1"
 dependencies = [
  "anyhow",
+ "bincode",
  "borsh 1.6.0",
+ "bs58",
  "bytes",
  "clap 4.5.54",
  "env_logger",

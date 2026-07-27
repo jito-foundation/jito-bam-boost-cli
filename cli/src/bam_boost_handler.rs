@@ -250,10 +250,51 @@ impl BamBoostCliHandler {
 
         let blockhash = rpc_client.get_latest_blockhash()?;
         let tx = Transaction::new_signed_with_payer(ixs, Some(payer), signers, blockhash);
+
+        if self.print_tx {
+            let encoded = serialize_tx_base58(&tx)?;
+            println!("{encoded}");
+            return Ok(());
+        }
+
         let result = rpc_client.send_and_confirm_transaction(&tx)?;
 
         log::info!("Transaction confirmed: {:?}", result);
 
         Ok(())
+    }
+}
+
+/// Serializes a signed transaction with bincode and Base58-encodes the result.
+///
+/// This is used to print a transaction for offline signing/submission workflows
+/// (e.g. Squads) instead of broadcasting it directly.
+fn serialize_tx_base58(tx: &Transaction) -> anyhow::Result<String> {
+    let serialized = bincode::serialize(tx)?;
+    Ok(bs58::encode(serialized).into_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use solana_keypair::{Keypair, Signer};
+    use solana_transaction::Transaction;
+
+    use super::serialize_tx_base58;
+
+    #[test]
+    fn serialize_tx_base58_round_trips_via_bincode() {
+        let payer = Keypair::new();
+        let tx = Transaction::new_with_payer(&[], Some(&payer.pubkey()));
+
+        let encoded = serialize_tx_base58(&tx).expect("serialization should succeed");
+        assert!(!encoded.is_empty());
+
+        let decoded_bytes = bs58::decode(&encoded)
+            .into_vec()
+            .expect("base58 decoding should succeed");
+        let decoded_tx: Transaction =
+            bincode::deserialize(&decoded_bytes).expect("bincode deserialization should succeed");
+
+        assert_eq!(decoded_tx, tx);
     }
 }
